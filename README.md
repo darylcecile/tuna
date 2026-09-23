@@ -6,17 +6,43 @@ Tuna learns how you like coding agents to work. Start it once, work normally, an
 
 ## Install
 
-Requires macOS or Linux. The compiled binary needs no Go, Node, Python, or external database runtime. An installed, authenticated coding harness provides the analysis model.
+Tuna runs on macOS and Linux, on ARM64 and AMD64. You'll need an installed, authenticated coding harness to provide the analysis model.
 
-Build from source with Go 1.25 or later:
+### With Binzo
+
+Install [Binzo](https://github.com/darylcecile/binzo), then run:
 
 ```sh
-make install
-# Put ~/.local/bin on your PATH, then:
-tuna start
+binzo add darylcecile/tuna --name tuna
 ```
 
-Or download the matching `tuna_<os>_<arch>` binary from [Releases](https://github.com/darylcecile/tuna/releases), verify it against `checksums.txt`, and install it as `tuna` on your PATH. Release assets are produced when a `v*` tag is pushed.
+Binzo selects the release binary for your system and installs it as `tuna`. Follow its PATH instructions if this is your first Binzo install.
+
+### From GitHub Releases
+
+Download your binary and `checksums.txt` from the [latest release](https://github.com/darylcecile/tuna/releases/latest):
+
+| System | Download |
+| --- | --- |
+| macOS, Apple Silicon | `tuna_darwin_arm64` |
+| macOS, Intel | `tuna_darwin_amd64` |
+| Linux, ARM64 | `tuna_linux_arm64` |
+| Linux, AMD64 / x86-64 | `tuna_linux_amd64` |
+
+Check the file's SHA-256 hash against its entry in `checksums.txt` using `shasum -a 256 <filename>` on macOS or `sha256sum <filename>` on Linux. Then install it on your PATH. For example, from the download directory on an Apple Silicon Mac:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+install -m 755 tuna_darwin_arm64 "$HOME/.local/bin/tuna"
+```
+
+Replace the filename for other systems. If `~/.local/bin` isn't on your PATH, add `export PATH="$HOME/.local/bin:$PATH"` to your shell configuration and open a new terminal.
+
+## Get started
+
+```sh
+tuna start
+```
 
 `tuna start` installs integrations for harnesses found on PATH, links their global instructions, and launches a detached service. It runs until stopped or the machine shuts down; run `tuna start` again after reboot. New sessions pick up the hooks and instructions. OpenCode reloads its global plugin automatically. In Codex, open `/hooks` and trust the new tuna hook.
 
@@ -35,9 +61,10 @@ tuna remove 12 15                 # Forget notes and their published rules
 tuna consolidate                  # Process the queue and refresh instructions now
 tuna stop
 tuna restart
-tuna update                       # Latest published GitHub release
-tuna update --from ./bin/tuna      # Locally built replacement
+tuna update                       # Update a direct-download installation
 ```
+
+For Binzo-managed installs, update with `binzo update darylcecile/tuna`, then run `tuna restart` to refresh the service and integrations.
 
 Output is plain, readable text by default. `--json` provides structured output for scripts and agents. Preference IDs stay stable. Reads work while the service is stopped; capture, removal, and consolidation require it to be running.
 
@@ -83,12 +110,6 @@ MCP exposes `preferences`, `list`, and `remove`. For another MCP-capable client,
 
 Integration references: [OpenCode V2 plugins](https://opencode.ai/v2/docs/build/plugins), [Copilot hooks](https://docs.github.com/en/copilot/reference/hooks-configuration), [Codex hooks](https://developers.openai.com/codex/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks). Current hooks-capable versions are required; OpenCode V1 is not supported.
 
-## Development
+## Contributing
 
-```sh
-make build                        # bin/tuna; CGO disabled
-make check                        # Race-enabled tests and go vet
-make release VERSION=v0.1.0      # macOS/Linux, arm64/amd64, checksums
-```
-
-Tests use temporary homes and fake analysis outputs, so they don't modify your harness settings or spend model credits. The service communicates over a user-private Unix socket. No listening TCP port or external database is needed.
+See the [contributor guide](CONTRIBUTING.md) for building, testing, and releasing tuna.
