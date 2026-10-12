@@ -33,7 +33,16 @@ tuna update --from ./bin/tuna
 make check
 ```
 
-This runs race-enabled tests and `go vet`. Tests use temporary homes and fake analysis outputs, so they don't modify your harness settings or spend model credits. The service communicates over a user-private Unix socket; no listening TCP port or external database is needed.
+This runs race-enabled tests and `go vet`. By default, tests use temporary homes and fake analysis outputs, so they don't modify your harness settings or spend model credits. The service communicates over a user-private Unix socket; no listening TCP port or external database is needed.
+
+To evaluate rule quality with an installed, signed-in harness:
+
+```sh
+TUNA_LIVE_ANALYZER=copilot go test ./internal/tuna -run '^TestLiveRuleQuality$' -count=1 -v
+TUNA_LIVE_ANALYZER=copilot go test ./internal/tuna -run '^TestLiveFeedbackHistory$' -count=1 -v
+```
+
+Choose `copilot`, `opencode`, `claude`, or `codex`; optionally set `TUNA_LIVE_MODEL` to a model supported by that harness. Each command makes two real provider calls using your existing authentication and consumes model quota/credits. Tuna's database and published instructions stay in temporary homes. The evaluations cover rule quality, cross-session reinforcement, changes of preference, and instruction edits, and log the results for inspection. They are skipped unless `TUNA_LIVE_ANALYZER` is set.
 
 ## Release builds
 

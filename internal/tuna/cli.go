@@ -314,10 +314,18 @@ func printNotes(w io.Writer, notes []Note) error {
 	fmt.Fprintln(t, "ID\tWHEN\tCATEGORY\tSOURCE\tPREFERENCE")
 	for _, n := range notes {
 		rule := n.Rule
+		when, harness, model := n.Created, n.Harness, n.Model
+		if len(n.History) > 0 {
+			latest := n.History[len(n.History)-1]
+			when, harness, model = latest.Created, latest.Harness, latest.Model
+		}
+		if n.Confirmations > 1 {
+			rule += fmt.Sprintf(" (confirmed %d times)", n.Confirmations)
+		}
 		if n.Status != "active" {
 			rule = "[" + n.Status + "] " + rule
 		}
-		fmt.Fprintf(t, "%d\t%s\t%s\t%s · %s\t%s\n", n.ID, n.Created.Local().Format("Jan 02 15:04"), n.Category, n.Harness, n.Model, rule)
+		fmt.Fprintf(t, "%d\t%s\t%s\t%s · %s\t%s\n", n.ID, when.Local().Format("Jan 02 15:04"), n.Category, harness, model, rule)
 	}
 	return t.Flush()
 }

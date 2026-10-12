@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -18,6 +19,22 @@ import (
 type fakeGenerator func(string, any) error
 
 func TestMain(m *testing.M) {
+	if path := os.Getenv("TUNA_TEST_CAPTURE_FILE"); path != "" && len(os.Args) > 3 && os.Args[3] == "capture" {
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			os.Exit(1)
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			os.Exit(1)
+		}
+		_, writeErr := f.Write(append(b, '\n'))
+		closeErr := f.Close()
+		if writeErr != nil || closeErr != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if os.Getenv("TUNA_TEST_GENERATOR") == "1" {
 		b, _ := json.Marshal(map[string]string{"directory": os.Getenv("PWD"), "internal": os.Getenv("TUNA_INTERNAL")})
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "assistant.message", "data": map[string]string{"content": string(b)}})
@@ -71,11 +88,11 @@ func seed(t *testing.T, s *Store, text, rule, category string, at time.Time) int
 	if err != nil {
 		t.Fatal(err)
 	}
-	notes, err := s.list(Filter{})
-	if err != nil {
+	var id int64
+	if err := s.QueryRow("SELECT id FROM notes WHERE event_id=?", e.ID).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
-	return notes[0].ID
+	return id
 }
 
 func TestAnalysisEvidenceAndQueue(t *testing.T) {
@@ -192,6 +209,47 @@ func TestConsolidationRejectsUnknownIDsAndConcurrentEdit(t *testing.T) {
 	b, _ := os.ReadFile(c.AgentsFile)
 	if string(b) != "User edited this while analysis ran.\n" {
 		t.Fatal("overwrote user edit")
+	}
+}
+
+func TestConsolidationRevisesSupportedPreference(t *testing.T) {
+	p, c, s := fixture(t)
+	evidence := "For release branches, ask before pushing."
+	id := seed(t, s, evidence, "Always ask before pushing.", "workflow", time.Now())
+	original, err := os.ReadFile(c.AgentsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range []string{
+		fmt.Sprintf(`{"keep_ids":[%d],"revisions":[{"id":9999,"rule":"Invented."}]}`, id),
+		fmt.Sprintf(`{"keep_ids":[],"revisions":[{"id":%d,"rule":"Revive a rejected rule."}]}`, id),
+		fmt.Sprintf(`{"keep_ids":[%d],"revisions":[{"id":%d,"rule":"  "}]}`, id, id),
+		fmt.Sprintf(`{"keep_ids":[%d],"revisions":[{"id":%d,"rule":"First."},{"id":%d,"rule":"Second."}]}`, id, id, id),
+	} {
+		if _, err := consolidate(context.Background(), p, c, s, response(output)); err == nil {
+			t.Fatalf("accepted invalid revision: %s", output)
+		}
+	}
+	notes, err := s.list(Filter{})
+	if err != nil || len(notes) != 1 || notes[0].Rule != "Always ask before pushing." {
+		t.Fatalf("invalid revision changed stored preferences: %+v, %v", notes, err)
+	}
+	published, err := os.ReadFile(c.AgentsFile)
+	if err != nil || !bytes.Equal(original, published) {
+		t.Fatalf("invalid revision changed instructions: %s, %v", published, err)
+	}
+	rule := "Ask before pushing to release branches."
+	output := fmt.Sprintf(`{"keep_ids":[%d],"revisions":[{"id":%d,"rule":%q}]}`, id, id, rule)
+	if n, err := consolidate(context.Background(), p, c, s, response(output)); err != nil || n != 1 {
+		t.Fatalf("consolidate revision = %d, %v", n, err)
+	}
+	notes, err = queryNotes(context.Background(), p, Filter{})
+	if err != nil || len(notes) != 1 || notes[0].ID != id || notes[0].Rule != rule || notes[0].Evidence != evidence {
+		t.Fatalf("revision lost corrected wording or provenance: %+v, %v", notes, err)
+	}
+	published, err = os.ReadFile(c.AgentsFile)
+	if err != nil || !strings.Contains(string(published), fmt.Sprintf("- %s <!-- tuna:%d -->", rule, id)) || strings.Contains(string(published), "Always ask before pushing.") {
+		t.Fatalf("incorrect revised instructions: %s, %v", published, err)
 	}
 }
 

@@ -27,10 +27,9 @@ export default {
     await ctx.session.hook("prompt", async (event) => {
       if (event.prompt.text.startsWith("TUNA_INTERNAL_ANALYSIS_V1")) return;
       try {
-        const [session, messages] = await Promise.all([
-          ctx.session.get({ sessionID: event.sessionID }).catch(() => undefined),
-          ctx.session.context({ sessionID: event.sessionID }).catch(() => []),
-        ]);
+        const session = await ctx.session.get({ sessionID: event.sessionID });
+        if (session.parentID) return;
+        const messages = await ctx.session.context({ sessionID: event.sessionID }).catch(() => []);
         const previous = messages.findLast((m) => m.type === "assistant");
         const model = previous?.model ?? session?.model;
         await capture({
