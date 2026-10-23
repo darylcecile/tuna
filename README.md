@@ -108,9 +108,21 @@ The local SQLite database stores pending messages until successful analysis, the
 
 All instruction paths are symlinks to `~/.agents/AGENTS.md` by default. Setup preserves and merges existing instruction contents and keeps originals beside replaced files as `.tuna-backup-*`. Unrelated harness settings and hooks are retained. Existing harness policies, disabled hooks, or higher-priority instruction overrides can affect whether integrations run. Tuna honors `XDG_CONFIG_HOME`, `COPILOT_HOME`, `CODEX_HOME`, and `CLAUDE_CONFIG_DIR`.
 
-MCP exposes `preferences`, `list`, and `remove`. For another MCP-capable client, register the stdio command `tuna mcp`. Agents can also call `tuna query --json`, `tuna list today --json`, and the other CLI commands directly. Hook capture is bounded, silent, and does nothing when tuna is stopped.
+MCP exposes `preferences`, `list`, `remember`, and `remove` to every integrated harness. For another MCP-capable client, register the stdio command `tuna mcp`. Agents can also call `tuna query --json`, `tuna list today --json`, and the other CLI commands directly. Hook capture is bounded, silent, and does nothing when tuna is stopped.
 
 Integration references: [OpenCode V2 plugins](https://opencode.ai/v2/docs/build/plugins), [Copilot hooks](https://docs.github.com/en/copilot/reference/hooks-configuration), [Codex hooks](https://developers.openai.com/codex/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks). Current hooks-capable versions are required; OpenCode V1 is not supported.
+
+### Explicitly remembering a note
+
+Agents may call `remember` **only when the user or a skill explicitly directs them to use it**, never autonomously. For example, ask: “Use Tuna's remember tool to note that I prefer concise summaries.” The MCP arguments are:
+
+```json
+{"note":"I prefer concise summaries."}
+```
+
+`note` is required, must not be blank, and is limited to 128 KiB. Optional `harness`, `model`, and `session` fields record known source metadata; omit unknown values rather than guessing. Omitted harness and model default to `mcp` and `unknown`, and session stays empty.
+
+The service must be running. A successful `{"queued":true}` response means the note was stored in the pending queue for later analysis and consolidation. It does not immediately create a learned preference or edit shared instructions. The existing preference checks still apply, so a queued note is not guaranteed to become a retained rule. Normal background processing handles it, or `tuna consolidate` processes the queue on demand. Invalid input or service failures return an error.
 
 ## Contributing
 

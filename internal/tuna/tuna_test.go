@@ -411,6 +411,24 @@ func TestServiceRoutesAndMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
+	tools, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remember *mcp.Tool
+	for _, tool := range tools.Tools {
+		if tool.Name == "remember" {
+			remember = tool
+		}
+	}
+	if remember == nil {
+		t.Fatal("remember is not discoverable")
+	}
+	for name, policy := range map[string]string{"tool": remember.Description, "initialization": cs.InitializeResult().Instructions} {
+		if !strings.Contains(policy, "only when the user or a skill explicitly directs") || !strings.Contains(policy, "NEVER call remember autonomously") {
+			t.Fatalf("%s lacks the explicit-use restriction: %s", name, policy)
+		}
+	}
 	result, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "preferences", Arguments: map[string]any{"category": "scope"}})
 	if err != nil || result.IsError {
 		t.Fatalf("MCP query: %+v %v", result, err)

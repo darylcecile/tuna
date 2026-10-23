@@ -3,6 +3,7 @@ package tuna
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -17,8 +18,20 @@ type QueryOutput struct {
 	Preferences []Note `json:"preferences"`
 }
 
+type RememberInput struct {
+	Note    string `json:"note" jsonschema:"Note to queue for later analysis and consolidation; maximum 128 KiB"`
+	Harness string `json:"harness,omitempty" jsonschema:"Source harness if known; omit to use mcp"`
+	Model   string `json:"model,omitempty" jsonschema:"Source model if known; omit to use unknown; never guess"`
+	Session string `json:"session,omitempty" jsonschema:"Source session ID if known; omit if unknown; never invent one"`
+}
+type RememberOutput struct {
+	Queued bool `json:"queued" jsonschema:"Stored for later analysis and consolidation; not yet a published preference"`
+}
+
+const rememberPolicy = "Call remember only when the user or a skill explicitly directs you to use it. NEVER call remember autonomously."
+
 func newMCP(p Paths, version string) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "tuna", Version: version}, &mcp.ServerOptions{Instructions: "Look up the user's preferences before substantial work. Preferences describe how the user likes agents to work; heed the scope and conditions in each rule."})
+	s := mcp.NewServer(&mcp.Implementation{Name: "tuna", Version: version}, &mcp.ServerOptions{Instructions: "Look up the user's preferences before substantial work. Preferences describe how the user likes agents to work; heed the scope and conditions in each rule. " + rememberPolicy})
 	mcp.AddTool(s, &mcp.Tool{Name: "preferences", Description: "Look up learned user preferences about communication, implementation, testing, scope, and workflow."}, func(ctx context.Context, _ *mcp.CallToolRequest, input QueryInput) (*mcp.CallToolResult, QueryOutput, error) {
 		notes, err := queryNotes(ctx, p, Filter{Query: input.Query, Category: input.Category, Model: input.Model, Limit: 100})
 		return nil, QueryOutput{notes}, err
@@ -32,6 +45,22 @@ func newMCP(p Paths, version string) *mcp.Server {
 		}
 		notes, err := queryNotes(ctx, p, Filter{Since: since, Until: until, Limit: 100})
 		return nil, QueryOutput{notes}, err
+	})
+	mcp.AddTool(s, &mcp.Tool{Name: "remember", Description: "Queue a note for later analysis and consolidation; does not immediately create a preference or publish instructions. " + rememberPolicy}, func(ctx context.Context, _ *mcp.CallToolRequest, input RememberInput) (*mcp.CallToolResult, RememberOutput, error) {
+		if strings.TrimSpace(input.Note) == "" {
+			return nil, RememberOutput{}, fmt.Errorf("note must not be blank")
+		}
+		e := Event{Harness: or(input.Harness, "mcp"), Model: input.Model, Session: input.Session, Text: input.Note}
+		var result struct {
+			Accepted bool `json:"accepted"`
+		}
+		if err := call(ctx, p, "POST", "/ingest", e, &result); err != nil {
+			return nil, RememberOutput{}, err
+		}
+		if !result.Accepted {
+			return nil, RememberOutput{}, fmt.Errorf("tuna did not accept the note")
+		}
+		return nil, RememberOutput{Queued: true}, nil
 	})
 	mcp.AddTool(s, &mcp.Tool{Name: "remove", Description: "Forget specified preference IDs when the user asks to remove them."}, func(ctx context.Context, _ *mcp.CallToolRequest, input struct {
 		IDs []int64 `json:"ids"`
